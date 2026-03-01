@@ -59,3 +59,14 @@ export function moveItemFromListToListAt(
 	}
 	return;
 }
+
+export function renameList(id: string, description: string) {
+	const list = lists.find((l) => l.id === id);
+	if (list) list.description = description;
+}
+
+export function renameItem(listId: string, itemId: string, description: string) {
+	const list = lists.find((l) => l.id === listId);
+	const item = list?.items.find((i) => i.id === itemId);
+	if (item) item.description = description;
+}
