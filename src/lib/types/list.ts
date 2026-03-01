@@ -1,13 +1,8 @@
-export type Item = {
+export type Node = {
 	id: string;
 	description: string;
 	done: boolean;
-};
-
-export type List = {
-	id: string;
-	description: string;
+	parentId: string | null;
+	order: number;
 	type: 'list' | 'checklist';
-	done: boolean;
-	items: Item[];
 };

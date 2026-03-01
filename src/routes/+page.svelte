@@ -1,32 +1,29 @@
 <script lang="ts">
 	import { draggable, droppable } from '@thisux/sveltednd';
 	import type { DragDropState } from '@thisux/sveltednd';
-	import { newId, newItemId } from '$lib/helpers/id';
 	import {
-		lists,
+		nodes,
+		addList,
 		addListItem,
-		moveItemFromListToList,
-		moveItemFromListToListAt,
-		swapListItems,
-		renameList,
-		renameItem
+		getRootNodes,
+		getChildren,
+		moveItemToList,
+		moveItemToListAt,
+		swapItems,
+		renameNode
 	} from '$lib/store/list.svelte';
 	import { generateRandomName } from '$lib/helpers/randomName';
 
-	function addList() {
-		lists.push({
-			id: newId(),
-			description: generateRandomName(),
-			type: 'list',
-			done: false,
-			items: [{ id: newItemId(), description: generateRandomName(), done: false }]
-		});
+	function handleAddList() {
+		addList(generateRandomName());
 	}
 
 	function handleListDrop(targetListId: string, state: DragDropState) {
 		const data = state.draggedItem as { itemId: string; listId: string } | null;
 		if (!data?.itemId || data.listId === targetListId) return;
-		moveItemFromListToList(data.listId, targetListId, data.itemId);
+		const item = nodes.find((n) => n.id === data.itemId);
+		if (!item || item.parentId === targetListId) return; // already moved by handleItemDrop
+		moveItemToList(data.itemId, targetListId);
 	}
 
 	let editingId = $state<string | null>(null);
@@ -40,19 +37,14 @@
 		const data = state.draggedItem as { itemId: string; listId: string } | null;
 		if (!data?.itemId || data.itemId === targetItemId) return;
 
-		const fromList = lists.find((l) => l.id === data.listId);
-		const toList = lists.find((l) => l.items.some((i) => i.id === targetItemId));
-		if (!fromList || !toList) return;
+		const draggedItem = nodes.find((n) => n.id === data.itemId);
+		const targetItem = nodes.find((n) => n.id === targetItemId);
+		if (!draggedItem || !targetItem) return;
 
-		const fromIndex = fromList.items.findIndex((i) => i.id === data.itemId);
-		const toIndex = toList.items.findIndex((i) => i.id === targetItemId);
-		if (fromIndex < 0 || toIndex < 0) return;
-
-		if (fromList.id === toList.id) {
-			if (fromIndex === toIndex) return;
-			swapListItems(fromList.id, fromIndex, toIndex);
+		if (draggedItem.parentId === targetItem.parentId) {
+			swapItems(data.itemId, targetItemId);
 		} else {
-			moveItemFromListToListAt(data.listId, toList.id, data.itemId, toIndex);
+			moveItemToListAt(data.itemId, targetItem.parentId!, targetItem.order);
 		}
 	}
 </script>
@@ -60,12 +52,12 @@
 <main class="mx-auto mt-10 mb-8 max-w-[1800px] px-4">
 	<div class="mb-4 flex w-full flex-row items-center justify-between">
 		<h1 class="mb-4 text-2xl font-bold">Lists</h1>
-		<button onclick={addList} class="border-md border border-slate-200 bg-slate-100 px-6 py-2">Add List</button>
+		<button onclick={handleAddList} class="border-md border border-slate-200 bg-slate-100 px-6 py-2">Add List</button>
 	</div>
 	<div class="grid grid-cols-4 gap-4">
 		{#each [0, 1, 2, 3] as col}
 			<div class="flex flex-col gap-4">
-				{#each lists.filter((_, i) => i % 4 === col) as list (list.id)}
+				{#each getRootNodes().filter((_, i) => i % 4 === col) as list (list.id)}
 					<article
 						use:droppable={{
 							container: list.id,
@@ -82,12 +74,12 @@
 										value={list.description}
 										oninput={(e) => (list.description = e.currentTarget.value)}
 										onblur={() => {
-											renameList(list.id, list.description);
+											renameNode(list.id, list.description);
 											editingId = null;
 										}}
 										onkeydown={(e) => {
 											if (e.key === 'Enter') {
-												renameList(list.id, list.description);
+												renameNode(list.id, list.description);
 												editingId = null;
 											}
 										}}
@@ -105,15 +97,12 @@
 									</span>
 								{/if}
 							</h2>
-							<button
-								class="mt-3 text-sm underline"
-								onclick={() => addListItem(list.id, { description: generateRandomName(), done: false })}
-							>
+							<button class="mt-3 text-sm underline" onclick={() => addListItem(list.id, generateRandomName())}>
 								Add Item
 							</button>
 						</div>
 						<ul class="min-h-32 space-y-2">
-							{#each list.items as item (item.id)}
+							{#each getChildren(list.id) as item (item.id)}
 								<li
 									use:draggable={{
 										container: list.id,
@@ -133,12 +122,12 @@
 											value={item.description}
 											oninput={(e) => (item.description = e.currentTarget.value)}
 											onblur={() => {
-												renameItem(list.id, item.id, item.description);
+												renameNode(item.id, item.description);
 												editingId = null;
 											}}
 											onkeydown={(e) => {
 												if (e.key === 'Enter') {
-													renameItem(list.id, item.id, item.description);
+													renameNode(item.id, item.description);
 													editingId = null;
 												}
 											}}

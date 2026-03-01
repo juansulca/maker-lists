@@ -1,72 +1,62 @@
-import { newItemId } from '$lib/helpers/id';
-import type { Item, List } from '$lib/types/list';
+import { newId, newItemId } from '$lib/helpers/id';
+import type { Node } from '$lib/types/list';
 
-export const lists = $state<List[]>([]);
+export const nodes = $state<Node[]>([]);
 
-export function swapListItems(id: string, ...swapIndex: [number, number]) {
-	const list = lists.find((list) => list.id === id);
-	if (list) {
-		const [from, to] = swapIndex;
-		const [item] = list.items.splice(from, 1);
-		list.items.splice(to, 0, item);
-	}
-
-	return;
+export function getRootNodes() {
+	return nodes.filter((n) => n.parentId === null).sort((a, b) => a.order - b.order);
 }
 
-export function addListItem(id: string, item: Pick<Item, 'description' | 'done'>) {
-	const list = lists.find((list) => list.id === id);
-	if (list) {
-		const newItem = {
-			id: newItemId(),
-			...item
-		};
-		list.items.push(newItem);
-	}
+export function getChildren(parentId: string) {
+	return nodes.filter((n) => n.parentId === parentId).sort((a, b) => a.order - b.order);
 }
 
-export function moveItemFromListToList(fromId: string, toId: string, itemId: string) {
-	const fromList = lists.find((list) => list.id === fromId);
-	const toList = lists.find((list) => list.id === toId);
-	if (fromList && toList) {
-		const item = fromList.items.find((item) => item.id === itemId);
-		if (item) {
-			toList.items = [...toList.items, item];
-			fromList.items = fromList.items.filter((item) => item.id !== itemId);
-		}
-	}
-	return;
+export function addList(description: string, type: 'list' | 'checklist' = 'list') {
+	const order = nodes.filter((n) => n.parentId === null).length;
+	nodes.push({ id: newId(), description, done: false, parentId: null, order, type });
 }
 
-export function moveItemFromListToListAt(
-	fromId: string,
-	toId: string,
-	itemId: string,
-	insertIndex: number
-) {
-	const fromList = lists.find((list) => list.id === fromId);
-	const toList = lists.find((list) => list.id === toId);
-	if (fromList && toList) {
-		const item = fromList.items.find((item) => item.id === itemId);
-		if (item) {
-			toList.items = [
-				...toList.items.slice(0, insertIndex),
-				item,
-				...toList.items.slice(insertIndex)
-			];
-			fromList.items = fromList.items.filter((item) => item.id !== itemId);
-		}
-	}
-	return;
+export function addListItem(parentId: string, description: string) {
+	const parent = nodes.find((n) => n.id === parentId);
+	const order = nodes.filter((n) => n.parentId === parentId).length;
+	nodes.push({ id: newItemId(), description, done: false, parentId, order, type: parent?.type ?? 'list' });
 }
 
-export function renameList(id: string, description: string) {
-	const list = lists.find((l) => l.id === id);
-	if (list) list.description = description;
+export function moveItemToList(itemId: string, toParentId: string) {
+	const item = nodes.find((n) => n.id === itemId);
+	if (!item) return;
+	const oldParentId = item.parentId;
+	nodes
+		.filter((n) => n.parentId === oldParentId && n.id !== itemId)
+		.sort((a, b) => a.order - b.order)
+		.forEach((n, i) => (n.order = i));
+	item.parentId = toParentId;
+	item.order = nodes.filter((n) => n.parentId === toParentId && n.id !== itemId).length;
 }
 
-export function renameItem(listId: string, itemId: string, description: string) {
-	const list = lists.find((l) => l.id === listId);
-	const item = list?.items.find((i) => i.id === itemId);
-	if (item) item.description = description;
+export function moveItemToListAt(itemId: string, toParentId: string, insertIndex: number) {
+	const item = nodes.find((n) => n.id === itemId);
+	if (!item) return;
+	const oldParentId = item.parentId;
+	nodes
+		.filter((n) => n.parentId === oldParentId && n.id !== itemId)
+		.sort((a, b) => a.order - b.order)
+		.forEach((n, i) => (n.order = i));
+	item.parentId = toParentId;
+	nodes
+		.filter((n) => n.parentId === toParentId && n.id !== itemId)
+		.sort((a, b) => a.order - b.order)
+		.forEach((n, i) => (n.order = i < insertIndex ? i : i + 1));
+	item.order = insertIndex;
+}
+
+export function swapItems(id1: string, id2: string) {
+	const a = nodes.find((n) => n.id === id1);
+	const b = nodes.find((n) => n.id === id2);
+	if (a && b) [a.order, b.order] = [b.order, a.order];
+}
+
+export function renameNode(id: string, description: string) {
+	const node = nodes.find((n) => n.id === id);
+	if (node) node.description = description;
 }
