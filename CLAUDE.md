@@ -25,7 +25,9 @@ This is a **SvelteKit + Svelte 5** kanban/notes app with drag-and-drop list mana
 
 Exported store API:
 - **Read**: `getRootNodes()`, `getChildren(parentId)`
-- **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`
+- **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`, `deleteItem(itemId)`, `deleteList(listId)`, `clearAllLists()`
+
+`deleteList` removes the list node and all its children in one splice. `deleteItem` splices by index. `clearAllLists` does a single `splice(0, length)`.
 
 Direct property mutation on reactive `$state` objects (e.g. `node.description = ...`) is acceptable inside components — `$bindable` props do this implicitly and it is the correct Svelte 5 pattern. What must go through store functions is structural changes to the `nodes` array (push, splice, reorder).
 
@@ -61,7 +63,9 @@ const item = nodes.find((n) => n.id === data.itemId);
 if (!item || item.parentId === targetListId) return;
 ```
 
-DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`) — not in the page component.
+DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`, `onTrashDrop`) — not in the page component.
+
+`onTrashDrop` is used by the trash drop zone at the bottom of `+page.svelte` (container `'trash'`). The container identifier doesn't need to match the draggable's container — `@thisux/sveltednd` fires `onDrop` on any droppable the cursor lands on regardless of container mismatch. The trash zone sits outside the list DOM tree so event bubbling is not an issue.
 
 ### Layout
 
@@ -115,6 +119,10 @@ When used inside a `use:draggable` element, include `interactive: ['span', 'inpu
 Prettier config (tabs, single quotes, no trailing commas, 120 char width). Tailwind v4 with `@tailwindcss/vite` plugin — no `tailwind.config.js`, styles are in `src/routes/layout.css`.
 
 Svelte 5 runes (`$state`, `$props`, `$derived`) are used throughout — avoid Svelte 4 reactive syntax.
+
+### Confirmation dialogs
+
+Use inline Svelte state (`let confirming = $state(false)`) rather than `window.confirm()` for dangerous actions. Toggle to show an inline "Are you sure?" prompt with confirm/cancel buttons — no modal component needed.
 
 ## Coding rules
 

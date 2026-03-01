@@ -1,3 +1,3 @@
-export function focus(node: HTMLInputElement) {
+export function focus(node: HTMLInputElement | HTMLTextAreaElement) {
 	node.focus();
 }

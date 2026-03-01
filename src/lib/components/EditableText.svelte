@@ -7,21 +7,26 @@
 </script>
 
 {#if editing}
-	<input
+	<textarea
 		use:focus
-		type="text"
 		bind:value
+		rows="1"
 		onblur={() => (editing = false)}
-		onkeydown={(e) => e.key === 'Enter' && (editing = false)}
-		class="w-full rounded border border-gray-300 px-1"
-	/>
+		onkeydown={(e) => {
+			if (e.key === 'Enter' && !e.shiftKey) {
+				e.preventDefault();
+				editing = false;
+			}
+		}}
+		class="field-sizing-content w-full resize-none rounded border border-gray-300 px-1"
+	></textarea>
 {:else}
 	<span
 		role="button"
 		tabindex="0"
 		onclick={() => (editing = true)}
 		onkeydown={(e) => e.key === 'Enter' && (editing = true)}
-		class={['cursor-text select-none', className]}
+		class={['block min-w-0 cursor-text wrap-anywhere select-none', className]}
 	>
 		{value}
 	</span>

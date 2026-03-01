@@ -1,5 +1,5 @@
 import type { DragDropState } from '@thisux/sveltednd';
-import { nodes, moveItemToList, moveItemToListAt, swapItems } from '$lib/store/list.svelte';
+import { nodes, moveItemToList, moveItemToListAt, swapItems, deleteItem } from '$lib/store/list.svelte';
 
 type DragData = { itemId: string; listId: string };
 
@@ -22,4 +22,10 @@ export function onItemDrop(targetItemId: string, state: DragDropState) {
 	} else {
 		moveItemToListAt(data.itemId, targetItem.parentId!, targetItem.order);
 	}
+}
+
+export function onTrashDrop(state: DragDropState) {
+	const data = state.draggedItem as DragData | null;
+	if (!data?.itemId) return;
+	deleteItem(data.itemId);
 }
