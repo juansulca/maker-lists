@@ -21,13 +21,30 @@ This is a **SvelteKit + Svelte 5** kanban/notes app with drag-and-drop list mana
 
 ### State management
 
-`src/lib/store/list.svelte.ts` holds the single global `$state<List[]>` array and exports all mutation functions (`addListItem`, `moveItemFromListToList`, `moveItemFromListToListAt`, `swapListItems`, `renameList`, `renameItem`). All state mutations go through these functions — never mutate the array directly in components (except `lists.push(...)` in `+page.svelte` for adding a new list).
+`src/lib/store/list.svelte.ts` holds the single global `$state<Node[]>` flat array and exports all mutation functions and read helpers. All state mutations go through these functions — never mutate the array itself directly in components.
 
-### Types
+Exported store API:
+- **Read**: `getRootNodes()`, `getChildren(parentId)`
+- **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`
 
-`src/lib/types/list.ts` defines the two core types:
-- `Item` — `{ id, description, done }`
-- `List` — `{ id, description, type: 'list' | 'checklist', done, items: Item[] }`
+Direct property mutation on reactive `$state` objects (e.g. `node.description = ...`) is acceptable inside components — `$bindable` props do this implicitly and it is the correct Svelte 5 pattern. What must go through store functions is structural changes to the `nodes` array (push, splice, reorder).
+
+### Data model
+
+`src/lib/types/list.ts` defines a single flat `Node` type designed to map 1:1 to a SQL table:
+
+```ts
+type Node = {
+  id: string;
+  description: string;
+  done: boolean;
+  parentId: string | null; // null = root-level list
+  order: number;           // position within parent
+  type: 'list' | 'checklist';
+};
+```
+
+Root-level lists have `parentId: null`. Items have `parentId` pointing to their list. The tree is reconstructed at read time via `getRootNodes()` / `getChildren()`.
 
 ### Drag-and-drop
 
@@ -36,11 +53,57 @@ There are **three DnD implementations** in various states of use:
 2. **Custom native HTML DnD actions** — `src/lib/actions/draggable.ts` and `src/lib/actions/droppable.ts` (serializes drag data via `dataTransfer`)
 3. **`@dnd-kit-svelte`** — imported in `src/lib/components/dnd/droppable.svelte` but not wired into the main page
 
-The app is WIP; the DnD approach may still be in flux.
+**Important `@thisux/sveltednd` behaviour**: `drop` events bubble up the DOM. When an item `<li>` and its parent list `<article>` both have `use:droppable`, dropping on an item fires both callbacks — the item's first (child → parent propagation). The list drop handler must guard against this:
+
+```ts
+// skip if the item was already repositioned by the item-level drop handler
+const item = nodes.find((n) => n.id === data.itemId);
+if (!item || item.parentId === targetListId) return;
+```
+
+DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`) — not in the page component.
 
 ### Layout
 
-`+page.svelte` renders lists in a **4-column masonry layout** — items are distributed across columns by index modulo 4 (`lists.filter((_, i) => i % 4 === col)`), not CSS columns.
+`+page.svelte` renders lists in a **4-column masonry layout** — items are distributed across columns by index modulo 4 (`getRootNodes().filter((_, i) => i % 4 === col)`), not CSS columns.
+
+### File structure
+
+```
+src/lib/
+  actions/
+    focus.ts          # focus(node) action — auto-focuses an input on mount
+    draggable.ts      # custom native HTML5 DnD (unused)
+    droppable.ts      # custom native HTML5 DnD (unused)
+  components/
+    EditableText.svelte  # click-to-edit span/input toggle; uses bind:value
+    Item.svelte          # @dnd-kit-svelte sortable item (unused in main page)
+    dnd/droppable.svelte # @dnd-kit-svelte droppable (unused in main page)
+  handlers/
+    dnd.ts            # onListDrop, onItemDrop — drop event handlers
+  helpers/
+    id.ts             # newId() 8-char nanoid, newItemId() 6-char nanoid
+    randomName.ts     # generateRandomName() → "adjective noun"
+  store/
+    list.svelte.ts    # global nodes $state + all mutation functions
+  types/
+    list.ts           # Node type
+```
+
+### EditableText component
+
+`src/lib/components/EditableText.svelte` is a reusable click-to-edit component:
+- Props: `bind:value` (bindable string), `class` (optional extra classes for the span)
+- Manages its own `editing: boolean` state internally
+- Uses `use:focus` action to auto-focus the input on edit
+- Commits on `blur` or `Enter`; no cancel/escape handling
+
+Usage:
+```svelte
+<EditableText bind:value={node.description} />
+```
+
+When used inside a `use:draggable` element, include `interactive: ['span', 'input']` to prevent drag-start when clicking into the editable text.
 
 ### Helpers
 
