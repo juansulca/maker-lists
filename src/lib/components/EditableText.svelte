@@ -1,8 +1,12 @@
 <script lang="ts">
 	import { focus } from '$lib/actions/focus';
+	import { getViewMode } from '$lib/store/viewMode.svelte';
 
-	let { value = $bindable(), class: className = '' }: { value: string; class?: string } = $props();
-
+	let {
+		value = $bindable(),
+		class: className = '',
+		isTitle = false
+	}: { value: string; class?: string; isTitle?: boolean } = $props();
 	let editing = $state(false);
 </script>
 
@@ -28,6 +32,7 @@
 		onkeydown={(e) => e.key === 'Enter' && (editing = true)}
 		class={['block min-w-0 cursor-text wrap-anywhere select-none', className]}
 	>
+		{#if getViewMode() === 'list' && !isTitle}-{/if}
 		{value}
 	</span>
 {/if}

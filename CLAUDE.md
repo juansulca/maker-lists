@@ -24,10 +24,12 @@ This is a **SvelteKit + Svelte 5** kanban/notes app with drag-and-drop list mana
 `src/lib/store/list.svelte.ts` holds the single global `$state<Node[]>` flat array and exports all mutation functions and read helpers. All state mutations go through these functions — never mutate the array itself directly in components.
 
 Exported store API:
-- **Read**: `getRootNodes()`, `getChildren(parentId)`
-- **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`, `deleteItem(itemId)`, `deleteList(listId)`, `clearAllLists()`
+- **Read**: `getRootNodes()`, `getChildren(parentId)`, `getItem(id)` (throws if not found)
+- **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`, `deleteItem(itemId)`, `deleteList(listId)`, `clearAllLists()`, `resetDone()`
 
-`deleteList` removes the list node and all its children in one splice. `deleteItem` splices by index. `clearAllLists` does a single `splice(0, length)`.
+`deleteList` and `deleteItem` both recursively collect all descendant IDs before splicing — deleting a node always removes its entire subtree. `clearAllLists` does a single `splice(0, length)`.
+
+`src/lib/store/viewMode.svelte.ts` holds global view mode state (`'list' | 'checklist'`). API: `getViewMode()`, `setViewMode(mode)`, `toggleViewMode()`. Import this anywhere view mode is needed instead of prop-drilling.
 
 Direct property mutation on reactive `$state` objects (e.g. `node.description = ...`) is acceptable inside components — `$bindable` props do this implicitly and it is the correct Svelte 5 pattern. What must go through store functions is structural changes to the `nodes` array (push, splice, reorder).
 
@@ -46,24 +48,30 @@ type Node = {
 };
 ```
 
-Root-level lists have `parentId: null`. Items have `parentId` pointing to their list. The tree is reconstructed at read time via `getRootNodes()` / `getChildren()`.
+Root-level lists have `parentId: null`. Items have `parentId` pointing to their list. Items can also have `parentId` pointing to another item — this creates sub-items (one level of nesting is currently rendered in the UI). The tree is reconstructed at read time via `getRootNodes()` / `getChildren()`.
 
 ### Drag-and-drop
 
 There are **three DnD implementations** in various states of use:
-1. **`@thisux/sveltednd`** — currently active in `+page.svelte` via `use:draggable` / `use:droppable` directives
+1. **`@thisux/sveltednd`** — currently active in `+page.svelte` and `ListItem.svelte` via `use:draggable` / `use:droppable` directives
 2. **Custom native HTML DnD actions** — `src/lib/actions/draggable.ts` and `src/lib/actions/droppable.ts` (serializes drag data via `dataTransfer`)
 3. **`@dnd-kit-svelte`** — imported in `src/lib/components/dnd/droppable.svelte` but not wired into the main page
 
-**Important `@thisux/sveltednd` behaviour**: `drop` events bubble up the DOM. When an item `<li>` and its parent list `<article>` both have `use:droppable`, dropping on an item fires both callbacks — the item's first (child → parent propagation). The list drop handler must guard against this:
+**Important `@thisux/sveltednd` behaviour**: `drop` events bubble up the DOM. When an item `<li>` and its parent list `<article>` both have `use:droppable`, dropping on an item fires both callbacks — the item's first (child → parent propagation). Guards in each handler prevent double-handling:
 
 ```ts
-// skip if the item was already repositioned by the item-level drop handler
-const item = nodes.find((n) => n.id === data.itemId);
+// onItemDrop: skip if item is already directly under targetItem (nest already handled)
+if (draggedItem.parentId === targetItemId) return;
+
+// onListDrop: skip if item is already a direct child of this list
 if (!item || item.parentId === targetListId) return;
 ```
 
-DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`, `onTrashDrop`) — not in the page component.
+**Nested draggables**: Sub-items have both `use:draggable` and are inside a parent `<li>` that also has `use:draggable`. To prevent the parent from capturing the drag when a sub-item is grabbed, sub-items use `ondragstart={(e) => e.stopPropagation()}`. This stops the `dragstart` event from bubbling to the parent's draggable listener while still letting the sub-item's own listener fire.
+
+DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`, `onNestDrop`, `onTrashDrop`) — not in the page component.
+
+`onNestDrop(targetItemId, state)` moves the dragged item to be a child of `targetItemId`. It guards against circular nesting with `isUnderNode(targetItemId, draggedItemId)` (walks the parentId chain).
 
 `onTrashDrop` is used by the trash drop zone at the bottom of `+page.svelte` (container `'trash'`). The container identifier doesn't need to match the draggable's container — `@thisux/sveltednd` fires `onDrop` on any droppable the cursor lands on regardless of container mismatch. The trash zone sits outside the list DOM tree so event bubbling is not an issue.
 
@@ -80,16 +88,19 @@ src/lib/
     draggable.ts      # custom native HTML5 DnD (unused)
     droppable.ts      # custom native HTML5 DnD (unused)
   components/
-    EditableText.svelte  # click-to-edit span/input toggle; uses bind:value
+    EditableText.svelte  # click-to-edit span/textarea toggle
+    ListItem.svelte      # renders a list item + its sub-items; takes itemId prop
     Item.svelte          # @dnd-kit-svelte sortable item (unused in main page)
     dnd/droppable.svelte # @dnd-kit-svelte droppable (unused in main page)
   handlers/
-    dnd.ts            # onListDrop, onItemDrop — drop event handlers
+    dnd.ts            # onListDrop, onItemDrop, onNestDrop, onTrashDrop
   helpers/
     id.ts             # newId() 8-char nanoid, newItemId() 6-char nanoid
     randomName.ts     # generateRandomName() → "adjective noun"
   store/
     list.svelte.ts    # global nodes $state + all mutation functions
+    viewMode.svelte.ts # global viewMode $state ('list' | 'checklist')
+    db.ts             # IndexedDB helpers (loadNodes / saveNodes)
   types/
     list.ts           # Node type
 ```
@@ -97,17 +108,29 @@ src/lib/
 ### EditableText component
 
 `src/lib/components/EditableText.svelte` is a reusable click-to-edit component:
-- Props: `bind:value` (bindable string), `class` (optional extra classes for the span)
+- Props: `bind:value` (bindable string), `class` (optional extra classes for the span), `isTitle` (boolean, default false)
 - Manages its own `editing: boolean` state internally
-- Uses `use:focus` action to auto-focus the input on edit
+- Uses `use:focus` action to auto-focus the textarea on edit
+- Uses `<textarea>` with `field-sizing-content` for auto-height; Enter commits, Shift+Enter inserts newline
 - Commits on `blur` or `Enter`; no cancel/escape handling
+- In list mode, prepends a `-` bullet to non-title spans (`{#if getViewMode() === 'list' && !isTitle}-{/if}`)
 
 Usage:
 ```svelte
 <EditableText bind:value={node.description} />
+<EditableText bind:value={list.description} isTitle />
 ```
 
-When used inside a `use:draggable` element, include `interactive: ['span', 'input']` to prevent drag-start when clicking into the editable text.
+When used inside a `use:draggable` element, include `interactive: ['span', 'input', 'textarea', 'label', 'button']` to prevent drag-start when clicking into the editable text.
+
+### ListItem component
+
+`src/lib/components/ListItem.svelte` renders a single list item and its sub-items (one level deep):
+- Props: `itemId: string` — looks up the item reactively via `getItem(itemId)`
+- Reads view mode from `getViewMode()` directly (no prop needed)
+- The parent `<li>` has `use:draggable` + `use:droppable` (for reordering/cross-list moves)
+- Sub-items are rendered inline as `<li>` elements inside a `<ul>` with `ondragstart|stopPropagation` to prevent parent drag capture
+- A nest drop zone div (only rendered when `dndState.isDragging`) uses `onNestDrop` to accept drops and make them children of this item
 
 ### Helpers
 
@@ -118,7 +141,7 @@ When used inside a `use:draggable` element, include `interactive: ['span', 'inpu
 
 Prettier config (tabs, single quotes, no trailing commas, 120 char width). Tailwind v4 with `@tailwindcss/vite` plugin — no `tailwind.config.js`, styles are in `src/routes/layout.css`.
 
-Svelte 5 runes (`$state`, `$props`, `$derived`) are used throughout — avoid Svelte 4 reactive syntax.
+Svelte 5 runes (`$state`, `$derived`, `$effect`, `$props`, `$bindable`, `$inspect`) are used throughout — avoid Svelte 4 reactive syntax.
 
 ### Confirmation dialogs
 

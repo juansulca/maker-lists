@@ -11,6 +11,12 @@ export function getChildren(parentId: string) {
 	return nodes.filter((n) => n.parentId === parentId).sort((a, b) => a.order - b.order);
 }
 
+export function getItem(id: string) {
+	const item = nodes.find((n) => n.id === id);
+	if (!item) throw new Error(`Item with id ${id} not found`);
+	return item;
+}
+
 export function addList(description: string, type: 'list' | 'checklist' = 'list') {
 	const order = nodes.filter((n) => n.parentId === null).length;
 	nodes.push({ id: newId(), description, done: false, parentId: null, order, type });
@@ -62,13 +68,22 @@ export function renameNode(id: string, description: string) {
 }
 
 export function deleteItem(itemId: string) {
-	const idx = nodes.findIndex((n) => n.id === itemId);
-	if (idx !== -1) nodes.splice(idx, 1);
+	const toDelete = new Set<string>();
+	function collect(id: string) {
+		toDelete.add(id);
+		nodes.filter((n) => n.parentId === id).forEach((n) => collect(n.id));
+	}
+	collect(itemId);
+	nodes.splice(0, nodes.length, ...nodes.filter((n) => !toDelete.has(n.id)));
 }
 
 export function deleteList(listId: string) {
-	const toRemove = new Set(nodes.filter((n) => n.parentId === listId).map((n) => n.id));
-	toRemove.add(listId);
+	const toRemove = new Set<string>();
+	function collect(id: string) {
+		toRemove.add(id);
+		nodes.filter((n) => n.parentId === id).forEach((n) => collect(n.id));
+	}
+	collect(listId);
 	nodes.splice(0, nodes.length, ...nodes.filter((n) => !toRemove.has(n.id)));
 }
 

@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { draggable, droppable } from '@thisux/sveltednd';
+	import { droppable } from '@thisux/sveltednd';
 	import { Plus, Trash2 } from '@lucide/svelte';
 	import EditableText from '$lib/components/EditableText.svelte';
+	import ListItem from '$lib/components/ListItem.svelte';
 	import {
 		addList,
 		addListItem,
@@ -12,19 +13,19 @@
 		deleteList,
 		resetDone
 	} from '$lib/store/list.svelte';
-	import { onListDrop, onItemDrop, onTrashDrop } from '$lib/handlers/dnd';
+	import { onListDrop, onTrashDrop } from '$lib/handlers/dnd';
 	import { generateRandomName } from '$lib/helpers/randomName';
+	import { getViewMode, setViewMode, toggleViewMode } from '$lib/store/viewMode.svelte';
 
 	let confirmingClear = $state(false);
-	let viewMode = $state<'list' | 'checklist'>('list');
 
 	onMount(() => {
 		const saved = localStorage.getItem('viewMode');
-		if (saved === 'list' || saved === 'checklist') viewMode = saved;
+		if (saved === 'list' || saved === 'checklist') setViewMode(saved);
 	});
 
 	$effect(() => {
-		localStorage.setItem('viewMode', viewMode);
+		localStorage.setItem('viewMode', getViewMode());
 	});
 </script>
 
@@ -32,14 +33,11 @@
 	<div class="mb-4 flex w-full flex-row items-center justify-between">
 		<h1 class="mb-4 text-4xl font-bold">Maker lists</h1>
 		<div class="flex items-center gap-2">
-			{#if viewMode === 'checklist'}
+			{#if getViewMode() === 'checklist'}
 				<button onclick={resetDone} class="rounded-md border border-slate-300 px-4 py-2"> Reset Done </button>
 			{/if}
-			<button
-				onclick={() => (viewMode = viewMode === 'list' ? 'checklist' : 'list')}
-				class="min-w-20 rounded-md border border-slate-300 px-4 py-2"
-			>
-				{viewMode === 'list' ? 'Checklist' : 'List'}
+			<button onclick={() => toggleViewMode()} class="min-w-20 rounded-md border border-slate-300 px-4 py-2">
+				{getViewMode() === 'list' ? 'Checklist' : 'List'}
 			</button>
 			{#if confirmingClear}
 				<span class="text-sm text-gray-600">This will delete all lists. Are you sure?</span>
@@ -84,7 +82,7 @@
 					>
 						<div class="mb-3 flex items-center justify-between">
 							<h2 class="text-lg font-semibold">
-								<EditableText bind:value={list.description} />
+								<EditableText bind:value={list.description} isTitle />
 							</h2>
 							<div class="flex items-center gap-1">
 								<button
@@ -99,35 +97,13 @@
 									title="Delete list"
 								>
 									<Trash2 size={20} />
-									<!-- ❌ -->
 								</button>
 							</div>
 						</div>
 						<ul class="min-h-32 space-y-2">
 							{#each getChildren(list.id) as item (item.id)}
-								<li
-									use:draggable={{
-										container: list.id,
-										dragData: { itemId: item.id, listId: list.id },
-										interactive: ['span', 'input', 'label']
-									}}
-									use:droppable={{ container: item.id, callbacks: { onDrop: (s) => onItemDrop(item.id, s) } }}
-									class="cursor-grab rounded border border-gray-200 bg-gray-50"
-								>
-									<div class="m-0 inline-flex h-full w-full items-center gap-3 p-2">
-										{#if viewMode === 'checklist'}
-											<input
-												type="checkbox"
-												bind:checked={item.done}
-												class="h-5 w-5 cursor-pointer accent-purple-700"
-											/>
-										{/if}
-										<EditableText
-											bind:value={item.description}
-											class={viewMode === 'checklist' && item.done ? 'text-gray-400 ' : ''}
-										/>
-									</div>
-								</li>
+								{@const itemId = item.id}
+								<ListItem {itemId} />
 							{/each}
 						</ul>
 					</article>
