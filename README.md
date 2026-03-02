@@ -1,32 +1,35 @@
-# sv
+# Maker List
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+This project is inspired on the chapter "Checklist" from Every tool's a hammer by Adam Savage.
 
-## Creating a project
+It follows the 4 simple principles:
 
-If you're seeing this, you've probably already done this step. Congrats!
+1. Brain dump: The quickly and dirty stuff.
+2. The big chunks: Group and organize into manageable chunks. Break out and then break down.
+3. The medium chunks: Reorganize the the components into medium chunks by subcategories.
+4. Checklists: track progress and make
 
-```sh
-# create a new project
-npx sv create my-app
-```
+The application has two modes: list mode and checklists mode.
+List mode si simplified and optimized for input. Items can be dragged and dropped to sort, swap and delete items from a list.
 
-To recreate this project with the same configuration:
+Checklist mode is for tracking progress, entries can be sorted, swapped and deleted in addition to tracking the progress.
 
-```sh
-# recreate this project
-pnpm dlx sv create --template minimal --types ts --add prettier eslint tailwindcss="plugins:typography" devtools-json --install pnpm notes
-```
+## Upcoming features:
+
+- Subitems on lists
+- Grouping
+- Search
+- Cloud sync
 
 ## Developing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Once you've created a project and installed dependencies with `pnpm install`, start a development server:
 
 ```sh
-npm run dev
+pnpm run dev
 
 # or start the server and open the app in a new browser tab
-npm run dev -- --open
+pnpm run dev -- --open
 ```
 
 ## Building
@@ -34,9 +37,7 @@ npm run dev -- --open
 To create a production version of your app:
 
 ```sh
-npm run build
+pnpm run build
 ```
 
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+You can preview the production build with `pnpm run preview`.

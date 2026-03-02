@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { draggable, droppable } from '@thisux/sveltednd';
-	import { Plus, Trash2, X } from '@lucide/svelte';
+	import { Plus, Trash2 } from '@lucide/svelte';
 	import EditableText from '$lib/components/EditableText.svelte';
 	import {
 		addList,
