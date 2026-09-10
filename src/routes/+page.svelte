@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { droppable } from '@thisux/sveltednd';
+	import { dnd, droppable } from '$lib/dnd';
 	import { Plus, Trash2 } from '@lucide/svelte';
 	import EditableText from '$lib/components/EditableText.svelte';
 	import ListItem from '$lib/components/ListItem.svelte';
@@ -13,7 +13,7 @@
 		deleteList,
 		resetDone
 	} from '$lib/store/list.svelte';
-	import { onListDrop, onTrashDrop } from '$lib/handlers/dnd';
+	import { canDropOnList, onListDrop, onTrashDrop } from '$lib/handlers/dnd';
 	import { generateRandomName } from '$lib/helpers/randomName';
 	import { getViewMode, setViewMode, toggleViewMode } from '$lib/store/viewMode.svelte';
 
@@ -77,8 +77,12 @@
 			<div class="flex flex-col gap-4">
 				{#each getRootNodes().filter((_, i) => i % 4 === col) as list (list.id)}
 					<article
-						use:droppable={{ container: list.id, callbacks: { onDrop: (s) => onListDrop(list.id, s) } }}
-						class="rounded border border-gray-300 bg-white p-4"
+						{@attach droppable({
+							id: list.id,
+							accepts: (a) => canDropOnList(list.id, a),
+							onDrop: (a) => onListDrop(list.id, a)
+						})}
+						class="rounded border border-gray-300 bg-white p-4 data-over:border-purple-400 data-over:bg-purple-50"
 					>
 						<div class="mb-3 flex items-center justify-between">
 							<h2 class="text-lg font-semibold">
@@ -113,10 +117,17 @@
 	</div>
 
 	<div
-		use:droppable={{ container: 'trash', callbacks: { onDrop: onTrashDrop } }}
-		class="mt-8 flex items-center justify-center gap-2 rounded border-2 border-dashed border-red-200 py-6 text-red-300 transition-colors hover:border-red-400 hover:text-red-500"
+		{@attach droppable({ id: 'trash', onDrop: onTrashDrop })}
+		class={[
+			'mt-8 flex items-center justify-center gap-2 rounded border-2 border-dashed py-6 transition-colors data-over:border-red-500 data-over:bg-red-50 data-over:text-red-600',
+			dnd.dragging ? 'border-red-400 text-red-500' : 'border-red-200 text-red-300'
+		]}
 	>
 		<Trash2 size={20} />
 		<span class="text-sm">Drop items here to delete</span>
 	</div>
+	<p id="dnd-instructions" class="sr-only">
+		Press Space or Enter to pick up an item, use the arrow keys to move it to another position or list, press Space or
+		Enter to drop it, or Escape to cancel.
+	</p>
 </main>

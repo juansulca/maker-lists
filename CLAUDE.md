@@ -24,6 +24,7 @@ This is a **SvelteKit + Svelte 5** kanban/notes app with drag-and-drop list mana
 `src/lib/store/list.svelte.ts` holds the single global `$state<Node[]>` flat array and exports all mutation functions and read helpers. All state mutations go through these functions — never mutate the array itself directly in components.
 
 Exported store API:
+
 - **Read**: `getRootNodes()`, `getChildren(parentId)`, `getItem(id)` (throws if not found)
 - **Write**: `addList(description, type?)`, `addListItem(parentId, description)`, `moveItemToList(itemId, toParentId)`, `moveItemToListAt(itemId, toParentId, insertIndex)`, `swapItems(id1, id2)`, `renameNode(id, description)`, `deleteItem(itemId)`, `deleteList(listId)`, `clearAllLists()`, `resetDone()`
 
@@ -39,12 +40,12 @@ Direct property mutation on reactive `$state` objects (e.g. `node.description = 
 
 ```ts
 type Node = {
-  id: string;
-  description: string;
-  done: boolean;
-  parentId: string | null; // null = root-level list
-  order: number;           // position within parent
-  type: 'list' | 'checklist';
+	id: string;
+	description: string;
+	done: boolean;
+	parentId: string | null; // null = root-level list
+	order: number; // position within parent
+	type: 'list' | 'checklist';
 };
 ```
 
@@ -52,28 +53,19 @@ Root-level lists have `parentId: null`. Items have `parentId` pointing to their 
 
 ### Drag-and-drop
 
-There are **three DnD implementations** in various states of use:
-1. **`@thisux/sveltednd`** — currently active in `+page.svelte` and `ListItem.svelte` via `use:draggable` / `use:droppable` directives
-2. **Custom native HTML DnD actions** — `src/lib/actions/draggable.ts` and `src/lib/actions/droppable.ts` (serializes drag data via `dataTransfer`)
-3. **`@dnd-kit-svelte`** — imported in `src/lib/components/dnd/droppable.svelte` but not wired into the main page
+The app uses its own tiny runes-based DnD library in `src/lib/dnd/` (no HTML5 drag events). Public API (`$lib/dnd`):
 
-**Important `@thisux/sveltednd` behaviour**: `drop` events bubble up the DOM. When an item `<li>` and its parent list `<article>` both have `use:droppable`, dropping on an item fires both callbacks — the item's first (child → parent propagation). Guards in each handler prevent double-handling:
+- `draggable({ id, data?, disabled?, interactive? })` — attachment (`{@attach draggable(...)}`). Pointer: 4px move threshold for mouse (so clicks on children still work), 200ms hold for touch. Keyboard: element gets `tabindex="0"`; Space/Enter picks up, arrow keys move the target to the nearest droppable in that direction, Space/Enter drops, Escape/blur cancels. Sets `data-dragging` while active. `interactive` (default `input, textarea, select, button, a, [contenteditable]`) lists descendants that never start a pointer drag.
+- `droppable({ id, accepts?, onDrop })` — attachment. `accepts(active)` returning `false` hides the highlight, blocks the drop and skips it during keyboard navigation. Sets `data-over` while an accepted item hovers it. Style with Tailwind variants: `data-over:ring-2`, `data-dragging:opacity-80`.
+- `dnd` — reactive read-only state: `dnd.active` (`{ id, data } | null`), `dnd.over` (droppable id), `dnd.mode` (`'pointer' | 'keyboard'`), `dnd.dragging`.
 
-```ts
-// onItemDrop: skip if item is already directly under targetItem (nest already handled)
-if (draggedItem.parentId === targetItemId) return;
+Hit-testing uses `document.elementFromPoint` + `closest('[data-dnd-droppable]')`, so **nested droppables are safe**: the innermost accepting droppable wins and only its `onDrop` fires (no bubbling, no double-handling). A rejected droppable falls through to its nearest droppable ancestor. The dragged element (and its descendants) is never a valid target. Nested draggables are safe too: a `pointerdown` is only handled by the closest `[data-dnd-draggable]`.
 
-// onListDrop: skip if item is already a direct child of this list
-if (!item || item.parentId === targetListId) return;
-```
+Internals live in `src/lib/dnd/state.svelte.ts` (state, droppable registry, `overAt`, `moveOver`, `drop`, `cancel`); the attachments in `draggable.ts` / `droppable.ts` only wire DOM events to it.
 
-**Nested draggables**: Sub-items have both `use:draggable` and are inside a parent `<li>` that also has `use:draggable`. To prevent the parent from capturing the drag when a sub-item is grabbed, sub-items use `ondragstart={(e) => e.stopPropagation()}`. This stops the `dragstart` event from bubbling to the parent's draggable listener while still letting the sub-item's own listener fire.
+DnD handlers live in `src/lib/handlers/dnd.ts`, all taking `(targetId, active: Active)`: `onListDrop` (append / un-nest), `onItemDrop` (swap within same parent, otherwise insert at the target's position), `onNestDrop` (make child of target, currently unused), `onTrashDrop` (delete). `canDropOnList(listId, active)` is the `accepts` predicate for lists (rejects direct children). `isUnderNode` walks the `parentId` chain to prevent circular nesting.
 
-DnD handlers live in `src/lib/handlers/dnd.ts` (`onListDrop`, `onItemDrop`, `onNestDrop`, `onTrashDrop`) — not in the page component.
-
-`onNestDrop(targetItemId, state)` moves the dragged item to be a child of `targetItemId`. It guards against circular nesting with `isUnderNode(targetItemId, draggedItemId)` (walks the parentId chain).
-
-`onTrashDrop` is used by the trash drop zone at the bottom of `+page.svelte` (container `'trash'`). The container identifier doesn't need to match the draggable's container — `@thisux/sveltednd` fires `onDrop` on any droppable the cursor lands on regardless of container mismatch. The trash zone sits outside the list DOM tree so event bubbling is not an issue.
+Older experiments still in the repo but unused: `src/lib/actions/draggable.ts` / `droppable.ts` (native HTML5 DnD) and `@dnd-kit-svelte` (`src/lib/components/Item.svelte`, `src/lib/components/dnd/`, `src/routes/test/`). `@thisux/sveltednd` is still in `package.json` but no longer imported.
 
 ### Layout
 
@@ -87,6 +79,11 @@ src/lib/
     focus.ts          # focus(node) action — auto-focuses an input on mount
     draggable.ts      # custom native HTML5 DnD (unused)
     droppable.ts      # custom native HTML5 DnD (unused)
+  dnd/
+    index.ts          # public API: draggable, droppable, dnd
+    state.svelte.ts   # reactive drag state, droppable registry, hit-testing, keyboard navigation
+    draggable.ts      # draggable attachment (pointer + keyboard)
+    droppable.ts      # droppable attachment
   components/
     EditableText.svelte  # click-to-edit span/textarea toggle
     ListItem.svelte      # renders a list item + its sub-items; takes itemId prop
@@ -108,29 +105,31 @@ src/lib/
 ### EditableText component
 
 `src/lib/components/EditableText.svelte` is a reusable click-to-edit component:
+
 - Props: `bind:value` (bindable string), `class` (optional extra classes for the span), `isTitle` (boolean, default false)
-- Manages its own `editing: boolean` state internally
-- Uses `use:focus` action to auto-focus the textarea on edit
-- Uses `<textarea>` with `field-sizing-content` for auto-height; Enter commits, Shift+Enter inserts newline
-- Commits on `blur` or `Enter`; no cancel/escape handling
-- In list mode, prepends a `-` bullet to non-title spans (`{#if getViewMode() === 'list' && !isTitle}-{/if}`)
+- Manages its own `editing: boolean` state and a `draft` copy of the value; `value` is only written on commit
+- Edits in a `<textarea>` sized to its content by an inline `autosize` attachment (focus, caret at end, `height = scrollHeight` on mount and on `input`) — no reliance on `field-sizing`, so it works in Safari/Firefox and shows the full text immediately
+- Enter commits (trimmed; empty input keeps the old value), Shift+Enter inserts a newline, Escape cancels, blur commits
+- Both span and textarea use `whitespace-pre-wrap wrap-anywhere px-1` so multi-line text renders identically in both modes and there is no layout jump
+- In list mode, prepends a `- ` bullet to non-title spans
 
 Usage:
+
 ```svelte
 <EditableText bind:value={node.description} />
 <EditableText bind:value={list.description} isTitle />
 ```
 
-When used inside a `use:draggable` element, include `interactive: ['span', 'input', 'textarea', 'label', 'button']` to prevent drag-start when clicking into the editable text.
+Inside a `draggable`, clicking the text still edits it: the pointer drag only starts after the cursor moves a few pixels, and the textarea is in the default `interactive` list.
 
 ### ListItem component
 
 `src/lib/components/ListItem.svelte` renders a single list item and its sub-items (one level deep):
+
 - Props: `itemId: string` — looks up the item reactively via `getItem(itemId)`
 - Reads view mode from `getViewMode()` directly (no prop needed)
-- The parent `<li>` has `use:draggable` + `use:droppable` (for reordering/cross-list moves)
-- Sub-items are rendered inline as `<li>` elements inside a `<ul>` with `ondragstart|stopPropagation` to prevent parent drag capture
-- A nest drop zone div (only rendered when `dndState.isDragging`) uses `onNestDrop` to accept drops and make them children of this item
+- The `<li>` has `{@attach draggable({ id })}` + `{@attach droppable({ id, onDrop: onItemDrop })}` (for reordering/cross-list moves) and `aria-describedby="dnd-instructions"` (visually hidden keyboard instructions in `+page.svelte`)
+- Sub-items are rendered inline as `<li>` elements inside a `<ul>` with the same attachments; no special handling needed for nesting
 
 ### Helpers
 
@@ -160,16 +159,17 @@ Use inline Svelte state (`let confirming = $state(false)`) rather than `window.c
 
 Runes (`$state`, `$derived`, `$effect`, `$props`, `$bindable`, `$inspect`) are compiler keywords — never import them.
 
-| Concept | Avoid (Svelte 4) | Use (Svelte 5) |
-|---|---|---|
-| Props | `export let foo` | `let { foo } = $props()` |
-| Events | `on:click={handler}` | `onclick={handler}` |
-| Slots | `<slot>` | `{#snippet children()}` + `{@render children()}` |
-| Actions | `use:action` | `@attach action` |
-| Reactive decl | `$: value = expr` | `const value = $derived(expr)` |
-| Side effects | `$: { sideEffect() }` | `$effect(() => { sideEffect() })` |
+| Concept       | Avoid (Svelte 4)      | Use (Svelte 5)                                   |
+| ------------- | --------------------- | ------------------------------------------------ |
+| Props         | `export let foo`      | `let { foo } = $props()`                         |
+| Events        | `on:click={handler}`  | `onclick={handler}`                              |
+| Slots         | `<slot>`              | `{#snippet children()}` + `{@render children()}` |
+| Actions       | `use:action`          | `@attach action`                                 |
+| Reactive decl | `$: value = expr`     | `const value = $derived(expr)`                   |
+| Side effects  | `$: { sideEffect() }` | `$effect(() => { sideEffect() })`                |
 
 Additional rules:
+
 - Keep `$derived` pure (no side effects); use `$effect` only for side effects (DOM, subscriptions, logging)
 - `$effect` runs after DOM updates, browser-only; return a cleanup fn when needed
 - For bindable props: `let { value = $bindable('') } = $props()`
